@@ -1,3 +1,15 @@
+const WebSocket = require('ws');
+const http = require('http');
+const express = require('express');
+
+const app = express();
+const PORT = process.env.PORT || 8080;
+
+app.get('/', (req, res) => res.send('Bridge Online'));
+
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+
 // WebSocket Server Message Handler
 ws.on('message', (message) => {
     const msg = message.toString();
@@ -40,3 +52,4 @@ ws.on('message', (message) => {
         console.log("[SERVER] Error processing JSON:", e);
     }
 });
+server.listen(PORT, () => console.log(`Bridge running on ${PORT}`));
