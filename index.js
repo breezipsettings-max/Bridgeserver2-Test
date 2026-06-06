@@ -1,95 +1,42 @@
-const WebSocket = require('ws');
-const http = require('http');
-const express = require('express');
+// WebSocket Server Message Handler
+ws.on('message', (message) => {
+    const msg = message.toString();
 
-const app = express();
-const PORT = process.env.PORT || 8080;
+    // 1. Handle JOIN: Register the player to a room based on their Roblox Server JobId
+    if (msg.startsWith("JOIN:")) {
+        const parts = msg.split(":");
+        ws.room = parts[1];
+        ws.playerName = parts[2] || "Unknown";
+        console.log(`[SERVER] ${ws.playerName} joined lobby: ${ws.room}`);
 
-app.get('/', (req, res) => res.send('Bridge Online'));
-
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
-
-wss.on('connection', (ws) => {
-    ws.room = 'EN';
-    ws.playerName = 'Unknown';
-
-    ws.on('message', (data) => {
-        const msg = data.toString();
-
-        // Handle JOIN
-        if (msg.startsWith("JOIN:")) {
-            const parts = msg.split(":");
-            ws.room = parts[1];
-            ws.playerName = parts[2] || "Unknown";
-            console.log(`${ws.playerName} joined: ${ws.room}`);
-            return;
-        }
-
-        // Handle Online Users Request
-        if (msg.startsWith("GET_ONLINE_USERS|")) {
-            let onlineNames = [];
-            wss.clients.forEach((client) => {
-                if (client.readyState === WebSocket.OPEN) {
-                    onlineNames.push(client.playerName || "Unknown");
-                }
-            });
-
-            // Format matches your Luau: ONLINE_USERS_RESPONSE|Name1, Name2
-            const response = "ONLINE_USERS_RESPONSE|" + (onlineNames.length > 0 ? onlineNames.join(", ") : "None");
-            ws.send(response);
-            return;
-        }
-
-        // Broadcast Logic
-        wss.clients.forEach((client) => {
-            if (client.readyState === WebSocket.OPEN && client.room === ws.room) {
-                client.send(msg);
-            }
+        const connectMsg = JSON.stringify({
+            Type: "SYSTEM_NOTIFICATION",
+            Message: `${ws.playerName} has connected to the relay server.`
         });
 
-// Morph Data Broadcast Logic
-try {
-    if (msg.startsWith("{")) {
-        const parsed = JSON.parse(msg);
-
-        if (parsed.PlayerName && parsed.MorphSettings) {
-            wss.clients.forEach((client) => {
-                // REMOVED 'client !== ws' so the sender gets the echo
-                if (client.readyState === WebSocket.OPEN && client.room === ws.room) {
-                    client.send(msg);
-                }
-            });
-
-            return;
-        }
+        wss.clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN && client.room === ws.room) {
+                client.send(connectMsg);
+            }
+        });
+        return;
     }
-} catch (e) {
-    // Silently ignore messages that aren't valid JSON
-}
 
-        // Obsidian Handshake BroadCast Logic
-        if (msg.includes("ObsidianHandshake")) {
-            try {
-                const packet = JSON.parse(msg);
+    // 2. Morph Data Broadcast Logic
+    try {
+        if (msg.startsWith("{")) {
+            const parsed = JSON.parse(msg);
+            if (parsed.PlayerName && parsed.MorphSettings) {
+                console.log(`[SERVER] Echoing update for ${parsed.PlayerName} in room ${ws.room}`);
                 wss.clients.forEach((client) => {
-                    if (client !== ws && client.readyState === WebSocket.OPEN && client.room === ws.room) {
-                        client.send(JSON.stringify({
-                            Type: "ObsidianHandshake",
-                            UserId: packet.UserId
-                        }));
-                    }
-                });
-            } catch (e) {
-                wss.clients.forEach((client) => {
-                    if (client !== ws && client.readyState === WebSocket.OPEN && client.room === ws.room) {
+                    if (client.readyState === WebSocket.OPEN && client.room === ws.room) {
                         client.send(msg);
                     }
                 });
+                return;
             }
-            return;
         }
-    });
+    } catch (e) {
+        console.log("[SERVER] Error processing JSON:", e);
+    }
 });
-
-server.listen(PORT, () => console.log(`Bridge running on ${PORT}`));
