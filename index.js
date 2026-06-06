@@ -48,16 +48,18 @@ wss.on('connection', (ws) => {
             }
         });
 
-        // Morph Data Broadcast Logic
+     // Morph Data Broadcast Logic
         try {
             if (msg.startsWith("{")) {
                 const parsed = JSON.parse(msg);
+
                 if (parsed.PlayerName && parsed.MorphSettings) {
                     wss.clients.forEach((client) => {
-                        if (client !== ws && client.readyState === WebSocket.OPEN && client.room === ws.room) {
+                        if (client.readyState === WebSocket.OPEN && client.room === ws.room) {
                             client.send(msg);
                         }
                     });
+
                     return;
                 }
             }
