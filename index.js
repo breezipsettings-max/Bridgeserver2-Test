@@ -48,24 +48,25 @@ wss.on('connection', (ws) => {
             }
         });
 
-     // Morph Data Broadcast Logic
-        try {
-            if (msg.startsWith("{")) {
-                const parsed = JSON.parse(msg);
+// Morph Data Broadcast Logic
+try {
+    if (msg.startsWith("{")) {
+        const parsed = JSON.parse(msg);
 
-                if (parsed.PlayerName && parsed.MorphSettings) {
-                    wss.clients.forEach((client) => {
-                        if (client.readyState === WebSocket.OPEN && client.room === ws.room) {
-                            client.send(msg);
-                        }
-                    });
-
-                    return;
+        if (parsed.PlayerName && parsed.MorphSettings) {
+            wss.clients.forEach((client) => {
+                // REMOVED 'client !== ws' so the sender gets the echo
+                if (client.readyState === WebSocket.OPEN && client.room === ws.room) {
+                    client.send(msg);
                 }
-            }
-        } catch (e) {
-            // Silently ignore messages that aren't valid JSON
+            });
+
+            return;
         }
+    }
+} catch (e) {
+    // Silently ignore messages that aren't valid JSON
+}
 
         // Obsidian Handshake BroadCast Logic
         if (msg.includes("ObsidianHandshake")) {
