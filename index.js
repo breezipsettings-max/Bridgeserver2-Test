@@ -10,49 +10,82 @@ app.get('/', (req, res) => res.send('Bridge Online'));
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// FIX: Listen for incoming connections to get the 'ws' object
 wss.on('connection', (ws) => {
-    
-    // Now 'ws' is defined for this specific connected client
-    ws.on('message', (message) => {
-        const msg = message.toString();
+    ws.room = 'EN';
+    ws.playerName = 'Unknown';
 
-        // 1. Handle JOIN
+    ws.on('message', (data) => {
+        const msg = data.toString();
+
+        // Handle JOIN
         if (msg.startsWith("JOIN:")) {
             const parts = msg.split(":");
             ws.room = parts[1];
             ws.playerName = parts[2] || "Unknown";
-            console.log(`[SERVER] ${ws.playerName} joined lobby: ${ws.room}`);
-
-            const connectMsg = JSON.stringify({
-                Type: "SYSTEM_NOTIFICATION",
-                Message: `${ws.playerName} has connected to the relay server.`
-            });
-
-            wss.clients.forEach((client) => {
-                if (client.readyState === WebSocket.OPEN && client.room === ws.room) {
-                    client.send(connectMsg);
-                }
-            });
+            console.log(`${ws.playerName} joined: ${ws.room}`);
             return;
         }
 
-        // 2. Morph Data Broadcast Logic
-        try {
-            if (msg.startsWith("{")) {
-                const parsed = JSON.parse(msg);
-                if (parsed.PlayerName && parsed.MorphSettings) {
-                    console.log(`[SERVER] Echoing update for ${parsed.PlayerName} in room ${ws.room}`);
+        // Handle Online Users Request
+        if (msg.startsWith("GET_ONLINE_USERS|")) {
+            let onlineNames = [];
+            wss.clients.forEach((client) => {
+                if (client.readyState === WebSocket.OPEN) {
+                    onlineNames.push(client.playerName || "Unknown");
+                }
+            });
+
+            const response = "ONLINE_USERS_RESPONSE|" + (onlineNames.length > 0 ? onlineNames.join(", ") : "None");
+            ws.send(response);
+            return;
+        }
+
+        // Broadcast Logic
+        wss.clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN && client.room === ws.room) {
+                client.send(msg);
+            }
+        });
+
+        // Obsidian Handshake BroadCast Logic
+        if (msg.includes("ObsidianHandshake")) {
+            try {
+                const packet = JSON.parse(msg);
+                wss.clients.forEach((client) => {
+                    if (client !== ws && client.readyState === WebSocket.OPEN && client.room === ws.room) {
+                        client.send(JSON.stringify({
+                            Type: "ObsidianHandshake",
+                            UserId: packet.UserId
+                        }));
+                    }
+                });
+            } catch (e) {
+                wss.clients.forEach((client) => {
+                    if (client !== ws && client.readyState === WebSocket.OPEN && client.room === ws.room) {
+                        client.send(msg);
+                    }
+                });
+            }
+            return;
+        }
+
+        // Global Sync Listener Block
+        if (msg.includes('"command":') || msg.includes('"hatName":')) {
+            try {
+                const packet = JSON.parse(msg);
+                const KeywordSync = "DevHatSync";
+                
+                if (packet.keyword === KeywordSync) {
                     wss.clients.forEach((client) => {
-                        if (client.readyState === WebSocket.OPEN && client.room === ws.room) {
+                        if (client !== ws && client.readyState === WebSocket.OPEN && client.room === ws.room) {
                             client.send(msg);
                         }
                     });
-                    return;
                 }
+                return;
+            } catch (e) {
+                // Silently ignore malformed sync packets
             }
-        } catch (e) {
-            console.log("[SERVER] Error processing JSON:", e);
         }
     });
 });
